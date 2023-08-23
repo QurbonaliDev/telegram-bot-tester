@@ -14,13 +14,13 @@ logger.setLevel(logging.INFO)
 
 bot_user_name = os.getenv('BOT_FOR_TEST_NAME')
 
-logger.info("Инициализация Telegram клиента")
+logger.info('Initializing the Telegram client session')
 client = TelegramClient(
     session=os.getenv('SESSION_NAME'),
     api_id=int(os.getenv('API_ID')),
     api_hash=os.getenv('API_HASH')
 )
-logger.info('Инициализация сессии Redis клиента')
+logger.info('Initializing a Redis client session')
 redis = Redis(
     host=os.getenv('REDIS_HOST'),
     port=int(os.getenv('REDIS_PORT'))
@@ -31,13 +31,13 @@ async def handle_messages_to_send():
     while True:
         try:
             if redis.llen('request_messages') != 0:
-                logger.debug('Новое сообщение в очереди на отправку!')
-                message = redis.rpop('request_messages').decode()
-                logger.info(f"Отправляю сообщение {message}")
+                logger.debug('New message in queue to be sent!')
+                message = redis.rpop(os.getenv('REDIS_REQUEST_QUEUE')).decode()
+                logger.info(f'Sending message {message}')
                 await client.send_message(bot_user_name, message)
-                logger.debug(f'Сообщение успешно отправлено')
+                logger.debug('Message successfully sent')
         except Exception as e:
-            logger.error(f"Ошибка при отправке сообщения: {e}")
+            logger.error(f'Error while processing a new message: {e}')
             await asyncio.sleep(5)
         await asyncio.sleep(1)
 
@@ -53,17 +53,20 @@ async def handle_new_message(event):
             sender_username = sender.username
             if sender_username == bot_user_name:
                 await asyncio.sleep(1)
-                logger.info(f'Получено новое сообщение от пользователя {sender_username}: "{message.message}"')
-                redis.rpush('response_messages', message.message)
+                logger.info('Received a new message from user '
+                            f'{sender_username}: "{message.message}"')
+                await redis.rpush(
+                    os.getenv('REDIS_RESPONSE_QUEUE'), message.message)
     except Exception as e:
-        logger.error(f'Ошибка при обработке нового сообщения: {e}')
+        logger.error(f'Error while processing a new message: {e}')
 
 
 async def main():
     try:
         await handle_messages_to_send()
     except FloodWaitError as e:
-        logger.error(f'Аккаунт заблокирован! Попробуйте снова через {e.seconds} секунд')
+        logger.error('Account temporarily locked! '
+                     f'Try again in {e.seconds} seconds')
         return
     await client.run_until_disconnected()
 
